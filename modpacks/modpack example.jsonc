@@ -1,18 +1,17 @@
 {
-    "name": "modgasm-pack",
+    "name": "Lazy Modman modpack example",
     "loader": "fabric",
     "mods": [
         {
-            "link": "https://modrinth.com/project/AANobbMI",
-            "id": "AANobbMI", // either id or link
-            "name": "Sodium", // optional
-            "desc": "Preformance boost", // optional
-            "required": true // optional, defaults to true
+            "id": "AANobbMI", 
+            "name": "Sodium"
         },
         {
+            "name": "Fabric API",
             "link": "https://modrinth.com/project/P7dR8mSH"
         },
         {
+            "name": "Iris",
             "id": "YL57xq9U"
         },
         {

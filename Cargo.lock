@@ -719,6 +719,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "lazy-modman-cli"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "inquire",
+ "json5",
+ "reqwest",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "text_io",
+ "tokio",
+]
+
+[[package]]
 name = "libc"
 version = "0.2.172"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -794,21 +809,6 @@ dependencies = [
  "libc",
  "wasi 0.11.0+wasi-snapshot-preview1",
  "windows-sys 0.59.0",
-]
-
-[[package]]
-name = "modgasm"
-version = "0.1.0"
-dependencies = [
- "futures",
- "inquire",
- "json5",
- "reqwest",
- "serde",
- "serde_derive",
- "serde_json",
- "text_io",
- "tokio",
 ]
 
 [[package]]

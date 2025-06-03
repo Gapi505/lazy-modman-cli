@@ -1,0 +1,20 @@
+{
+    "name": "Lazy Modman Config Reference (do not select)", // Name used for identification in the modpack selection screen. Has to be uneque.
+    "loader": "fabric", // Which mod loader this modpack uses
+    "mods": [
+        {
+            "id": "{id}", // This is the project id. You can aquire it with the 3 dots menu next to the download button
+            "link": "https://modrinth.com/project/{id}", // preferably use the 'Copy permenant link' button, as it is less likely to break the modpack
+            // You only need either the id or the link. both are not required.
+
+            "name": "Name of the mod", // This field is not required, but it is recomended for clarity when encountering errors
+            "desc": "Description", // Optional. It is not used right now but will be in a future update.
+
+            "required": true // Optional, defaults to true. For now it does nothing.
+        },
+        // Add more mods by adding more JSON objects. Objects have to be seperated by a comma
+        {
+            "id": "{another id}"
+        }
+    ]
+}
