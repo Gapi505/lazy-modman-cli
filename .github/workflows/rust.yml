@@ -90,4 +90,4 @@ jobs:
           dist/modpacks/config reference.jsonc
           dist/modpacks/modpack example.jsonc
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.RELEASE_PAT }}
