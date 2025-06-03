@@ -5,58 +5,56 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{fs, path::PathBuf};
 use std::path::Path;
-use inquire::{Text, Autocomplete, CustomUserError, autocompletion::Replacement};
-use futures::stream::{FuturesUnordered, StreamExt};
+use inquire::{Text, Autocomplete, CustomUserError, autocompletion::Replacement, ui::{RenderConfig, StyleSheet, Color, Styled}};
+use futures::stream::{FuturesOrdered, StreamExt};
 
 const MODPACKS_DIR: &str = "modpacks/";
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = Client::new();
+    inquire::set_global_render_config(get_render_config());
 
     prepare_paths();
-    let _ = backup_mods();
 
     let mut modpacks = Modpacks::new();
     let _ = modpacks.fill();
     let autocomplete = modpacks.gen_autocomplete();
     let pack = Text::new("Modpack name:")
         .with_autocomplete(autocomplete)
-        .with_placeholder("e.g. modgasm-pack")
         .prompt()?;
-    let modpack = modpacks.find_by_name(pack).expect("no such modpack");
+    let mut modpack = modpacks.find_by_name(pack).expect("no such modpack");
 
     let version = Text::new("Game version:")
-        .with_placeholder("e.g. 1.20.1")
+        .with_placeholder("1.20.1")
         .prompt()?;
-    let mut url_futures = FuturesUnordered::new();
-    
+
+    let _ = backup_and_remove_mods();
+    modpack.get_download_links(&client, version).await;
+
     for m in modpack.mods{
-        if let Some(id) = m.get_id(){
-            let url = get_url(&client, modpack.loader.clone() ,id.to_owned(), version.clone());
-            url_futures.push(url);
-        }
-    }
-
-    while let Some(url) = url_futures.next().await {
-        println!("{url:?}");
+        println!("{:?}: {:?}", m.name, m.download_link);
     }
 
     Ok(())
 }
 
 
-fn backup_mods() -> Result<(), Box<dyn std::error::Error>>{
+fn backup_and_remove_mods() -> Result<(), Box<dyn std::error::Error>> {
     let _ = fs::remove_dir_all("mods_cache/backup");
-    let _ = fs::create_dir_all("mods_cache/backup");
-    for entry in fs::read_dir("mods")?{
-        let file = entry?.path();
-        let _ = fs::copy(file, "mods_cache/backup/");
+    fs::create_dir_all("mods_cache/backup")?;
+
+    for entry in fs::read_dir("mods")? {
+        let entry = entry?;
+        let src = entry.path();
+        let filename = src.file_name().unwrap(); // get "sodium.jar"
+        let dest = Path::new("mods_cache/backup").join(filename);
+        fs::copy(&src, &dest)?; // don't ignore result here
+        fs::remove_file(&src)?;
     }
+
     Ok(())
 }
-
-
 
 
 fn prepare_paths(){
@@ -64,6 +62,7 @@ fn prepare_paths(){
     let _ = fs::create_dir_all("mods_cache");
     let _ = fs::create_dir_all("mods");
 }
+
 
 
 async fn get_url(client: &Client, loader: String, id: String, version: String) -> Option<String> {
@@ -89,7 +88,6 @@ async fn get_url(client: &Client, loader: String, id: String, version: String) -
         .await.ok()?
         .json::<Value>()
         .await.ok()?;
-    #[allow(clippy::manual_map)]
     if let Some(url) = specific_version["files"][0]["url"].as_str(){
         Some(url.to_string())
     }
@@ -116,7 +114,6 @@ fn get_modpack_by_filename(filename:&str) -> Modpack{
             name: "Error while decoding".to_string(), 
             loader: "fabric".to_string(), 
             mods: Vec::new()});
-    #[allow(clippy::let_and_return)]
     modpack
 
 }
@@ -193,6 +190,23 @@ pub struct Modpack {
     pub loader: String,
     pub mods: Vec<ModEntry>,
 }
+impl Modpack {
+    async fn get_download_links(&mut self, client: &Client, version: String){
+        let mut url_futures = FuturesOrdered::new();
+        
+        for m in self.mods.iter(){
+            if let Some(id) = m.get_id(){
+                let url = get_url(client, self.loader.clone() ,id.to_owned(), version.clone());
+                url_futures.push_back(url);
+            }
+        }
+        let mut i = 0;
+        while let Some(url) = url_futures.next().await{
+            self.mods[i].download_link = url;
+            i+=1;
+        }
+    }
+}
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct ModEntry {
@@ -202,6 +216,7 @@ pub struct ModEntry {
     pub desc: Option<String>,
     #[serde(default = "default_required")]
     pub required: bool,
+    pub download_link: Option<String>
 }
 impl ModEntry {
     fn get_id(&self) -> Option<&str>{
@@ -220,4 +235,17 @@ impl ModEntry {
 
 fn default_required() -> bool {
     true
+}
+
+
+fn get_render_config() -> RenderConfig<'static>{
+    let mut config = RenderConfig::default();
+    config.selected_option = Some(StyleSheet::new().with_fg(Color::LightRed));
+    config.help_message = StyleSheet::new().with_fg(Color::LightRed);
+    config.prompt_prefix = Styled::new("?").with_fg(Color::LightRed);
+    config.answered_prompt_prefix = Styled::new(">").with_fg(Color::LightRed);
+    config.option = StyleSheet::new().with_fg(Color::DarkGrey);
+    config.highlighted_option_prefix = Styled::new(">").with_fg(Color::DarkRed);
+    config.answer = StyleSheet::new().with_fg(Color::LightRed);
+    config
 }
