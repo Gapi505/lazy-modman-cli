@@ -76,11 +76,18 @@ jobs:
         name: lazy-modman-windows
         path: ./dist/
 
+    - name: Copy example configs
+      run: |
+        mkdir -p dist/modpacks
+        cp modpacks/*.jsonc dist/modpacks/
+
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v2
       with:
         files: |
           dist/lazy-modman-cli
           dist/lazy-modman-windows.exe
+          dist/modpacks/config reference.jsonc
+          dist/modpacks/modpack example.jsonc
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
