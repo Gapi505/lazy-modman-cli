@@ -3,12 +3,11 @@ use serde_derive::Deserialize;
 #[allow(unused_imports)]
 use serde::Deserialize;
 use serde_json::{Value, json};
+use std::io::Write;
 use std::{fs, path::PathBuf};
 use std::path::Path;
 use inquire::{Text, Autocomplete, CustomUserError, autocompletion::Replacement, ui::{RenderConfig, StyleSheet, Color, Styled}};
 use futures::stream::{FuturesOrdered, StreamExt};
-
-const MODPACKS_DIR: &str = "modpacks/";
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -30,11 +29,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .prompt()?;
 
     let _ = backup_and_remove_mods();
-    modpack.get_download_links(&client, version).await;
+    modpack.get_download_metadata(&client, version).await;
 
-    for m in modpack.mods{
+    /*for m in modpack.mods.iter(){
         println!("{:?}: {:?}", m.name, m.download_link);
-    }
+    }*/
+
+    modpack.downlaod_modpack().await;
 
     Ok(())
 }
@@ -58,14 +59,22 @@ fn backup_and_remove_mods() -> Result<(), Box<dyn std::error::Error>> {
 
 
 fn prepare_paths(){
-    let _ = fs::create_dir_all(MODPACKS_DIR);
-    let _ = fs::create_dir_all("mods_cache");
+    let _ = fs::create_dir_all("modpacks");
+    let _ = fs::create_dir_all("mods_cache/backup");
+    let _ = fs::create_dir_all("mods_cache/share");
     let _ = fs::create_dir_all("mods");
 }
 
+async fn download(url: String, path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+    let response = reqwest::get(url).await?;
+    let content = response.bytes().await?;
 
+    let mut downloaded_file = fs::File::create(&path)?;
+    downloaded_file.write_all(&content)?;
+    Ok(())
+}
 
-async fn get_url(client: &Client, loader: String, id: String, version: String) -> Option<String> {
+async fn get_file_metadata(client: &Client, loader: String, id: String, version: String) -> Option<(String, String)> {
     let params = [
         ("loaders", json!([loader]).to_string()),
         ("game_versions", json!([version]).to_string())
@@ -89,7 +98,8 @@ async fn get_url(client: &Client, loader: String, id: String, version: String) -
         .json::<Value>()
         .await.ok()?;
     if let Some(url) = specific_version["files"][0]["url"].as_str(){
-        Some(url.to_string())
+        let filename = specific_version["files"][0]["filename"].as_str().unwrap().to_string();
+        Some((url.to_string(), filename))
     }
     else {
         None
@@ -97,26 +107,6 @@ async fn get_url(client: &Client, loader: String, id: String, version: String) -
 
 }
 
-#[allow(dead_code)]
-fn get_modpack_by_filename(filename:&str) -> Modpack{
-    let path = Path::new(MODPACKS_DIR).join(filename);
-    let content = fs::read_to_string(path) 
-        .unwrap_or(r#"
-{
-    "name": "invalid-modpack",
-    "loader": "fabric",
-    "mods": [
-    ]
-}
-"#.to_string());
-    let modpack = json5::from_str(&content)
-        .unwrap_or(Modpack{
-            name: "Error while decoding".to_string(), 
-            loader: "fabric".to_string(), 
-            mods: Vec::new()});
-    modpack
-
-}
 
 fn get_modpack_by_path(path: PathBuf) -> Option<Modpack> {
     let content = std::fs::read_to_string(&path).ok()?;
@@ -161,7 +151,7 @@ impl Modpacks {
         Self { modpacks: Vec::new() }
     }
     fn fill(&mut self) -> Result<(), Box<dyn std::error::Error>>{
-        let path = Path::new(&MODPACKS_DIR);
+        let path = Path::new("modpacks");
         for entry in fs::read_dir(path)?{
             let entry = entry?;
             let path = entry.path();
@@ -189,21 +179,47 @@ pub struct Modpack {
     pub name: String,
     pub loader: String,
     pub mods: Vec<ModEntry>,
+    pub version: Option<String>
 }
 impl Modpack {
-    async fn get_download_links(&mut self, client: &Client, version: String){
+    async fn get_download_metadata(&mut self, client: &Client, version: String){
         let mut url_futures = FuturesOrdered::new();
         
         for m in self.mods.iter(){
             if let Some(id) = m.get_id(){
-                let url = get_url(client, self.loader.clone() ,id.to_owned(), version.clone());
+                let url = get_file_metadata(client, self.loader.clone() ,id.to_owned(), version.clone());
                 url_futures.push_back(url);
             }
         }
         let mut i = 0;
-        while let Some(url) = url_futures.next().await{
-            self.mods[i].download_link = url;
+        while let Some(metadata) = url_futures.next().await{
+            if metadata.is_none(){
+                continue;
+            }
+            let (url, filename) = metadata.unwrap();
+            self.mods[i].download_link = Some(url);
+            self.mods[i].filename = Some(filename);
+
             i+=1;
+        }
+    }
+    async fn downlaod_modpack(&self){
+        for m in self.mods.iter(){
+            if m.download_link.is_none() || m.filename.is_none(){
+                println!("Skipping {} as it does not exist", m.get_id().unwrap());
+                continue;
+            }
+            let path = m.download_and_cache().await;
+            let mods_path = Path::new("mods").join( m.filename.clone().unwrap());
+            let res = fs::copy(&path, mods_path);
+            if res.is_err(){
+                println!("Error coping file {res:?}");
+                continue;
+            }
+
+            let name = if let Some(name) = m.name.clone() {name} else {path.to_string_lossy().into_owned()};
+            
+            println!("Sucessfully installed {name}")
         }
     }
 }
@@ -216,7 +232,8 @@ pub struct ModEntry {
     pub desc: Option<String>,
     #[serde(default = "default_required")]
     pub required: bool,
-    pub download_link: Option<String>
+    pub download_link: Option<String>,
+    pub filename: Option<String>
 }
 impl ModEntry {
     fn get_id(&self) -> Option<&str>{
@@ -230,6 +247,37 @@ impl ModEntry {
         else {
             None
         }
+    }
+
+    fn check_if_cached(&self) -> Option<PathBuf>{
+        if self.filename.is_none() {return None;}
+        for entry in fs::read_dir("mods_cache/share").ok()?{
+            let entry = entry.ok()?;
+            let filename = entry.file_name();
+            if filename.to_string_lossy() == self.filename.clone().unwrap(){
+                return Some(entry.path());
+            }
+        }
+        None
+    }
+
+    async fn download_and_cache(&self) -> PathBuf{
+        for i in 0..5{
+            let path = self.check_if_cached();
+            if let Some(path) = path{
+                return path;
+            }
+            
+            println!("Downloading {:?}", self.download_link.clone().unwrap());
+            let download_path = Path::new("mods_cache/share").join(Path::new(self.filename.clone().unwrap().as_str()));
+            let result = download(self.download_link.clone().unwrap(), download_path).await;
+            if result.is_err(){
+                println!("failed download: {:?}, retry: {}", result, 5-i);
+            }
+        }
+        
+        eprintln!("Failed to download {} after 5 attempts", self.filename.clone().unwrap());
+        std::process::exit(1);
     }
 }
 

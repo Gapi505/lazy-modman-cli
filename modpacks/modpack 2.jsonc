@@ -1,0 +1,43 @@
+{
+    "name": "modgasm-pack-example-2",
+    "loader": "fabric",
+    "mods": [
+        {
+            "link": "https://modrinth.com/project/AANobbMI",
+            "id": "AANobbMI", // either id or link
+            "name": "Sodium", // optional
+            "desc": "Preformance boost", // optional
+            "required": true // optional, defaults to true
+        },
+        {
+            "link": "https://modrinth.com/project/P7dR8mSH"
+        },
+        {
+            "id": "YL57xq9U"
+        },
+        {
+            "id": "9s6osm5g",
+            "name": "Cloth Config"
+        },
+        {
+            "name": "Entity Culling",
+            "id": "NNAgCjsB"
+        },
+        {
+            "name": "FerriteCore",
+            "desc": "Memmory optimizations",
+            "id": "uXXizFIs"
+        },
+        {
+            "name": "Mod Menu",
+            "id": "mOgUt4GM"
+        },
+        {
+            "name": "Lithium",
+            "desc": "Optimizations",
+            "id": "gvQqBUqZ"
+        }
+        
+        
+    ]
+}
