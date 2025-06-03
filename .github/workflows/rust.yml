@@ -1,0 +1,58 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-linux:
+    name: Build Linux Binary
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        profile: minimal
+
+    - name: Build
+      run: cargo build --release
+
+    - name: Run tests
+      run: cargo test --release --verbose
+
+    - name: Upload Linux binary
+      uses: actions/upload-artifact@v4
+      with:
+        name: lazy-modman-linux
+        path: target/release/lazy-modman-cli
+
+  build-windows:
+    name: Build Windows Binary
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        profile: minimal
+
+    - name: Build
+      run: cargo build --release
+
+    - name: Upload Windows binary
+      uses: actions/upload-artifact@v4
+      with:
+        name: lazy-modman-windows.exe
+        path: target/release/lazy-modman-cli.exe
