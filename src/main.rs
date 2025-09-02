@@ -3,6 +3,7 @@ use serde_derive::Deserialize;
 #[allow(unused_imports)]
 use serde::Deserialize;
 use serde_json::{Value, json};
+use std::fmt::Display;
 use std::io::Write;
 use std::{fs, path::PathBuf};
 use std::path::Path;
@@ -110,6 +111,7 @@ async fn get_file_metadata(client: &Client, loader: String, id: String, version:
         .await.ok()?
         .json::<Value>()
         .await.ok()?;
+    println!("{:#}", compatible_versions);
     if let Some(url) = specific_version["files"][0]["url"].as_str(){
         let filename = specific_version["files"][0]["filename"].as_str().unwrap().to_string();
         Some((url.to_string(), filename))
@@ -196,24 +198,25 @@ pub struct Modpack {
 }
 impl Modpack {
     async fn get_download_metadata(&mut self, client: &Client, version: String){
-        let mut url_futures = FuturesOrdered::new();
-        
-        for m in self.mods.iter(){
+        {
+            let mut url_futures = FuturesOrdered::new();
+            for m in self.mods.iter_mut(){
             if let Some(id) = m.get_id(){
-                let url = get_file_metadata(client, self.loader.clone() ,id.to_owned(), version.clone());
+                let url = m.get_compatible_versions(client, self.loader.clone() , version.clone());
                 url_futures.push_back(url);
             }
-        }
-        let mut i = 0;
-        while let Some(metadata) = url_futures.next().await{
-            if metadata.is_none(){
-                continue;
             }
-            let (url, filename) = metadata.unwrap();
-            self.mods[i].download_link = Some(url);
-            self.mods[i].filename = Some(filename);
-
-            i+=1;
+            while let Some(metadata) = url_futures.next().await{
+                if metadata.is_none(){
+                    continue;
+                }
+            }
+        }
+        for m in self.mods.iter_mut(){
+            m.get_specific_version();
+            m.get_download_params();
+            let deps = m.get_dependencies();
+            println!("{:#?}", deps);
         }
     }
     async fn downlaod_modpack(&self){
@@ -241,12 +244,15 @@ impl Modpack {
 pub struct ModEntry {
     pub link: Option<String>,
     pub id: Option<String>,
+    pub version_id: Option<String>,
     pub name: Option<String>,
     pub desc: Option<String>,
     #[serde(default = "default_required")]
     pub required: bool,
     pub download_link: Option<String>,
-    pub filename: Option<String>
+    pub filename: Option<String>,
+    pub compatible_versions: Option<Value>,
+    pub specific_version: Option<Value>
 }
 impl ModEntry {
     fn get_id(&self) -> Option<&str>{
@@ -291,6 +297,87 @@ impl ModEntry {
         
         eprintln!("Failed to download {} after 5 attempts", self.filename.clone().unwrap());
         std::process::exit(1);
+    }
+    async fn get_compatible_versions(&mut self, client: &Client, loader: String, version: String) -> Option<()>{
+        let params = [
+            ("loaders", json!([loader]).to_string()),
+            ("game_versions", json!([version]).to_string())
+        ];
+        let compatible_versions = client
+            .get(format!("https://api.modrinth.com/v2/project/{}/version", self.id.as_ref().unwrap()))
+            .query(&params)
+            .send()
+            .await.ok()?
+            .json::<Value>()
+            .await.ok()?;
+        self.compatible_versions = Some(compatible_versions);
+        Some(())
+    }
+    fn get_specific_version(&mut self) -> Option<()>{
+        let versions = self.compatible_versions.as_ref()?.as_array()?;
+        if self.version_id.is_some(){
+            let res = versions.iter().find(|v|{
+                if v["id"].as_str() == self.version_id.as_deref() {
+                    true
+                }
+                else {
+                    false
+                }
+            });
+            if res.is_some(){
+                self.specific_version = res.cloned();
+                return Some(());
+            }
+        }
+
+        self.specific_version = Some(versions[0].clone());
+        Some(())
+
+    }
+    fn get_download_params(&mut self) -> Option<(String, String)>{
+
+        let specific_version = &self.specific_version.as_ref()?;
+        if let Some(url) = specific_version["files"][0]["url"].as_str(){
+            let filename = specific_version["files"][0]["filename"].as_str().unwrap().to_string();
+            self.download_link = Some(url.to_string());
+            self.filename = Some(filename.clone());
+            Some((url.to_string(), filename))
+        }
+        else {
+            None
+        }
+    }
+    fn get_dependencies(&self) -> Vec<ModEntry>{
+        let dependancies = self.compatible_versions.as_ref().unwrap()[0]["dependencies"].as_array().unwrap();
+        let dep_mods: Vec<_> = dependancies.iter().map(|i| {
+            println!("{:#}", i);
+            let project_id = i["project_id"].as_str().unwrap().to_string();
+            let version_id = i["version_id"].as_str();
+            let mod_ent = ModEntry {
+                id: Some(project_id),
+                version_id: version_id.map(str::to_string),
+                ..Default::default()
+            };
+            mod_ent
+            })
+            .collect();
+        dep_mods
+    }
+}
+impl Default for ModEntry {
+    fn default() -> Self {
+        Self { 
+            link: None, 
+            id: None, 
+            version_id: None, 
+            name: None, 
+            desc: None, 
+            required: false, 
+            download_link:None, 
+            filename: None, 
+            compatible_versions: None,
+            specific_version: None
+        }
     }
 }
 

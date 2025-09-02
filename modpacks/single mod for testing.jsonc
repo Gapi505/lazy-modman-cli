@@ -1,0 +1,11 @@
+
+{
+    "name": "testing modpack",
+    "loader": "fabric",
+    "mods": [
+        {
+            "id": "PtjYWJkn", 
+            "name": "Sodium"
+        }
+    ]
+}
