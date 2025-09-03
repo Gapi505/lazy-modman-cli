@@ -1,14 +1,10 @@
 {
-    "name": "Lazy Modman modpack example",
+    "name": "primary modpack",
     "loader": "fabric",
     "mods": [
         {
             "id": "AANobbMI", 
             "name": "Sodium"
-        },
-        {
-            "name": "Fabric API",
-            "link": "https://modrinth.com/project/P7dR8mSH"
         },
         {
             "name": "Iris",
@@ -35,8 +31,58 @@
             "name": "Lithium",
             "desc": "Optimizations",
             "id": "gvQqBUqZ"
+        },
+        {
+            "name": "Sodium Extra",
+            "id": "PtjYWJkn"
+        },
+        {
+            "name": "Apple Skin",
+            "id": "EsAfCjCV"
+        },
+        {
+            "id": "Bh37bMuy",
+            "name": "Sodium Options"
+        },
+        {
+            "id": "4I1XuqiY",
+            "name": "Entity Model features"
+        },
+        {
+            "id": "BVzZfTc1",
+            "name": "Entity Texture Features"
+        },
+        {
+            "id": "1IjD5062",
+            "name": "Continuity"
+        },
+        {
+            "id": "w7ThoJFB",
+            "name": "Zoomify"
+        },
+        {
+            "id": "qyVF9oeo",
+            "name": "Sound Physics Remastered"
+        },
+        {
+            "id": "rcTfTZr3",
+            "name": "Presence Footsteps"
+        },
+        {
+            "id": "8shC1gFX",
+            "name": "BetterF3"
+        },
+        {
+            "id": "VSNURh3q",
+            "name": "C2M"
+        },
+        {
+            "id": "fM515JnW",
+            "name": "Ambient Sounds"
+        },
+        {
+            "id": "avFDCaXI",
+            "name": "Instant Resurection"
         }
-        
-        
     ]
 }

@@ -3,12 +3,11 @@ use serde_derive::Deserialize;
 #[allow(unused_imports)]
 use serde::Deserialize;
 use serde_json::{Value, json};
-use std::fmt::Display;
 use std::io::Write;
 use std::{fs, path::PathBuf};
 use std::path::Path;
 use inquire::{Text, Autocomplete, CustomUserError, autocompletion::Replacement, ui::{RenderConfig, StyleSheet, Color, Styled}};
-use futures::stream::{FuturesOrdered, StreamExt};
+use tokio::task::JoinSet;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -37,9 +36,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_autocomplete(autocomplete)
         .prompt()?;
     let mut modpack = modpacks.find_by_name(pack).expect("no such modpack");
+    let latest_version = get_latest_version().await;
 
     let version = Text::new("Game version:")
-        .with_placeholder("1.20.1")
+        .with_placeholder(&latest_version)
+        .with_default(&latest_version)
         .prompt()?;
 
     let _ = backup_and_remove_mods();
@@ -54,6 +55,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+async fn get_latest_version() -> String {
+    reqwest::get("https://piston-meta.mojang.com/mc/game/version_manifest.json").await
+        .expect("cannot reach mojang.com")
+        .json::<Value>().await.unwrap()["latest"]["release"].as_str().unwrap().to_string()
+}
 
 fn backup_and_remove_mods() -> Result<(), Box<dyn std::error::Error>> {
     let _ = fs::remove_dir_all("mods_cache/backup");
@@ -88,7 +94,7 @@ async fn download(url: String, path: PathBuf) -> Result<(), Box<dyn std::error::
     Ok(())
 }
 
-async fn get_file_metadata(client: &Client, loader: String, id: String, version: String) -> Option<(String, String)> {
+/*async fn get_file_metadata(client: &Client, loader: String, id: String, version: String) -> Option<(String, String)> {
     let params = [
         ("loaders", json!([loader]).to_string()),
         ("game_versions", json!([version]).to_string())
@@ -120,7 +126,7 @@ async fn get_file_metadata(client: &Client, loader: String, id: String, version:
         None
     }
 
-}
+}*/
 
 
 fn get_modpack_by_path(path: PathBuf) -> Option<Modpack> {
@@ -198,26 +204,44 @@ pub struct Modpack {
 }
 impl Modpack {
     async fn get_download_metadata(&mut self, client: &Client, version: String){
-        {
-            let mut url_futures = FuturesOrdered::new();
-            for m in self.mods.iter_mut(){
-            if let Some(id) = m.get_id(){
-                let url = m.get_compatible_versions(client, self.loader.clone() , version.clone());
-                url_futures.push_back(url);
-            }
-            }
-            while let Some(metadata) = url_futures.next().await{
-                if metadata.is_none(){
-                    continue;
-                }
+        let loader = self.loader.clone();
+        let mut processed_mods: Vec<ModEntry> = Vec::new();
+        let mut task_set = JoinSet::new();
+        for m in self.mods.clone() {
+            let version_clone = version.clone();
+            let loader_clone = loader.clone();
+            let client_clone = client.clone();
+            task_set.spawn(async move {
+                let mut m_to_process = m;
+                let deps = m_to_process.get_metadata(&client_clone, version_clone, loader_clone).await;
+                (m_to_process, deps)
+            });
+        }
+        while let Some(res) = task_set.join_next().await {
+            let (processed_mod, dependencies) = res.expect("getting mod metadata panicked");
+            processed_mods.push(processed_mod);
+
+            for m in dependencies {
+                let dup_check = processed_mods.iter().find(|pm| {
+                    pm.id == m.id
+                });
+                let dup_check_og = self.mods.iter().find(|pm| {
+                    pm.id == m.id
+                });
+                if dup_check.is_some() || dup_check_og.is_some() {continue;}
+                let version_clone = version.clone();
+                let loader_clone = loader.clone();
+                let client_clone = client.clone();
+                task_set.spawn(async move {
+                    let mut m_to_process = m;
+                    let deps = m_to_process.get_metadata(&client_clone, version_clone, loader_clone).await;
+                    (m_to_process, deps)
+                });
             }
         }
-        for m in self.mods.iter_mut(){
-            m.get_specific_version();
-            m.get_download_params();
-            let deps = m.get_dependencies();
-            println!("{:#?}", deps);
-        }
+
+        self.mods = processed_mods;
+        self.purge_duplicates();
     }
     async fn downlaod_modpack(&self){
         for m in self.mods.iter(){
@@ -235,14 +259,23 @@ impl Modpack {
 
             let name = if let Some(name) = m.name.clone() {name} else {path.to_string_lossy().into_owned()};
             
-            println!("Sucessfully installed {name}")
+            println!("Sucessfully installed {} ({})", m.id.as_ref().unwrap(), name);
         }
+    }
+    fn purge_duplicates(&mut self){
+        let mut unique_mods = std::collections::HashSet::new();
+        self.mods.retain(|m|{
+            let id = m.id.clone().unwrap();
+            let is_first = unique_mods.contains(&id.clone());
+            unique_mods.insert(id.clone());
+            !is_first
+        });
+
     }
 }
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct ModEntry {
-    pub link: Option<String>,
     pub id: Option<String>,
     pub version_id: Option<String>,
     pub name: Option<String>,
@@ -258,10 +291,6 @@ impl ModEntry {
     fn get_id(&self) -> Option<&str>{
         if let Some(id) = &self.id{
             Some(id.as_str())
-        }
-        else if let Some(link) = &self.link {
-           link.split("/").last()
-            
         }
         else {
             None
@@ -304,7 +333,7 @@ impl ModEntry {
             ("game_versions", json!([version]).to_string())
         ];
         let compatible_versions = client
-            .get(format!("https://api.modrinth.com/v2/project/{}/version", self.id.as_ref().unwrap()))
+            .get(format!("https://api.modrinth.com/v2/project/{}/version", self.get_id().unwrap()))
             .query(&params)
             .send()
             .await.ok()?
@@ -315,6 +344,9 @@ impl ModEntry {
     }
     fn get_specific_version(&mut self) -> Option<()>{
         let versions = self.compatible_versions.as_ref()?.as_array()?;
+        if versions.is_empty(){
+            return None;
+        }
         if self.version_id.is_some(){
             let res = versions.iter().find(|v|{
                 if v["id"].as_str() == self.version_id.as_deref() {
@@ -348,26 +380,42 @@ impl ModEntry {
         }
     }
     fn get_dependencies(&self) -> Vec<ModEntry>{
-        let dependancies = self.compatible_versions.as_ref().unwrap()[0]["dependencies"].as_array().unwrap();
+        if self.specific_version.is_none(){
+            return Vec::new();
+        }
+        let dependancies = self.specific_version.as_ref().unwrap()["dependencies"].as_array().unwrap();
         let dep_mods: Vec<_> = dependancies.iter().map(|i| {
-            println!("{:#}", i);
             let project_id = i["project_id"].as_str().unwrap().to_string();
             let version_id = i["version_id"].as_str();
+            let required = i["dependency_type"].as_str().unwrap() == "required";
             let mod_ent = ModEntry {
                 id: Some(project_id),
                 version_id: version_id.map(str::to_string),
+                required,
                 ..Default::default()
             };
             mod_ent
             })
+            .filter(|me| me.required)
             .collect();
         dep_mods
+    }
+    async fn get_metadata(&mut self, client: &Client, version: String, loader: String) -> Vec<ModEntry>{
+        let res = self.get_compatible_versions(client, loader, version).await;
+        if res.is_none(){
+            eprintln!("No compatible versions found");
+            return vec![];
+        }
+        self.get_specific_version();
+        let deps = self.get_dependencies();
+        self.get_download_params();
+        deps
+
     }
 }
 impl Default for ModEntry {
     fn default() -> Self {
         Self { 
-            link: None, 
             id: None, 
             version_id: None, 
             name: None, 
