@@ -69,8 +69,7 @@ which mods to install and for which loader. **You only need to list the primary 
 
 1.  **Create your config file:**
     Place your JSONC config file into `.minecraft/modpacks/your-modpack-name.jsonc`.
-    The filename (e.g., `my-cool-pack.jsonc`) will be the name you select
-    when running the tool.
+    The filename (e.g., `my-cool-pack.jsonc`) is not related to the actual name of the modpack within the tool.
 
 2.  **Reference the example:**
     Use the detailed `modpack-config-reference.jsonc` included in the release
