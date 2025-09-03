@@ -1,20 +1,35 @@
+// This file defines your modpack for lazy-modman-cli.
+// Save this file as `your-modpack-name.jsonc` in your `.minecraft/modpacks/` folder.
 {
-    "name": "Lazy Modman Config Reference (do not select)", // Name used for identification in the modpack selection screen. Has to be uneque.
-    "loader": "fabric", // Which mod loader this modpack uses
+    // A unique, easy-to-read name for your modpack.
+    // This is how you'll select it when running the tool.
+    "name": "My Awesome Modpack",
+
+    // Specifies the type of mod loader this pack uses (e.g., "fabric", "forge", "quilt").
+    // Ensure this matches the loader your chosen mods are built for.
+    "loader": "fabric",
+
+    // A list of mods to include in your modpack.
     "mods": [
         {
-            "id": "{id}", // This is the project id. You can aquire it with the 3 dots menu next to the download button
-            "link": "https://modrinth.com/project/{id}", // preferably use the 'Copy permenant link' button, as it is less likely to break the modpack
-            // You only need either the id or the link. both are not required.
+            // The unique Modrinth ID for the mod.
+            // Find this by clicking the "three dots" menu next to a mod's download button
+            // on Modrinth and selecting "Copy ID".
+            "id": "AANobbMI", // Example: Sodium's Modrinth ID
 
-            "name": "Name of the mod", // This field is not required, but it is recomended for clarity when encountering errors
-            "desc": "Description", // Optional. It is not used right now but will be in a future update.
+            // [Optional] A clear name for the mod. Helps with error messages.
+            "name": "Super Mod",
 
-            "required": true // Optional, defaults to true. For now it does nothing.
+            // [Optional] A short description of the mod. (Currently not used)
+            "desc": "Does cool stuff",
+
+            // [Optional] Set to `false` if this mod is not essential. (Currently not used)
+            "required": true
         },
-        // Add more mods by adding more JSON objects. Objects have to be seperated by a comma
+        // Add more mods here, separated by commas.
         {
-            "id": "{another id}"
+            "id": "another_mod_id_456", // Placeholder for another mod ID
+            "name": "More Stuff"
         }
     ]
 }
